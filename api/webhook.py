@@ -14,34 +14,38 @@ class handler(BaseHTTPRequestHandler):
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
             
-            # 1. መጀመሪያ ፋይሉን ወደ ቴሌግራም መላክ (Vercel ሳይዘጋ እንዲጨርስ)
+            # 1. መጀመሪያ ፋይሉን ወደ ቴሌግራም መላክ
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
             files = {'document': ('camera_file.jpg', post_data)}
             data = {'chat_id': TELEGRAM_CHANNEL_ID}
             
             try:
-                # ቴሌግራም ፋይሉን ተቀብሎ እስኪጨርስ ሰርቨሩ ይጠብቃል
                 tg_response = requests.post(url, files=files, data=data, timeout=45)
                 
+                # 2. ከቴሌግራም መልስ ከተቀበልን በኋላ ለአንዴና ለመጨረሻ ጊዜ ለስልኩ ምላሽ መጻፍ
                 if tg_response.status_code == 200:
-                    # 2. ቴሌግራም ላይ በሰላም መድረሱን ካረጋገጥን በኋላ ብቻ ለስልኩ 200 መመለስ
                     self.send_response(200)
                     self.send_header('Content-type', 'application/json')
                     self.end_headers()
-                    self.wfile.write(json.dumps({"status": "success", "message": "File sent to Telegram and cleared"}).encode('utf-8'))
+                    self.wfile.write(json.dumps({"status": "success"}).encode('utf-8'))
                 else:
-                    # ቴሌግራም እምቢ ካለ ለስልኩ Error እንመልሳለን (ስልክህ ላይ እንዳይጠፋ)
                     self.send_response(tg_response.status_code)
+                    self.send_header('Content-type', 'application/json')
                     self.end_headers()
                     self.wfile.write(json.dumps({"status": "error", "reason": "Telegram rejected"}).encode('utf-8'))
+                    
             except Exception as e:
-                # የሰርቨር ወይም የቴሌግራም ኔትወርክ ከተቋረጠ ስልኩ ላይ እንዳይጠፋ 500 መመለስ
                 self.send_response(500)
+                self.send_header('Content-type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps({"status": "error", "reason": str(e)}).encode('utf-8'))
+            
+            # ከ multipart/form-data ስራ በኋላ ከ Function ቱ ለመውጣት return ማድረግ
             return
                 
         else:
+            # ለመደበኛ የቴሌግራም ዌብሁክ ወይም ለ GET/ሌላ ጥያቄ የሚሆን (አንድ ጊዜ ብቻ ምላሽ ይጽፋል)
             self.send_response(200)
+            self.send_header('Content-type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
