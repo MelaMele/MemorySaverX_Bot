@@ -14,25 +14,34 @@ class handler(BaseHTTPRequestHandler):
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
             
-            # 1. ለስልኩ ወዲያውኑ ምላሽ በመስጠት ግንኙነቱን ማቋረጥ (ስልኩ ቀጣይ ስራ እንዲሰራ)
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({"status": "processing"}).encode('utf-8'))
-            
-            # 2. ከዚያ በኋላ ፋይሉን በሰላም ወደ ቴሌግራም መላክ
+            # 1. መጀመሪያ ፋይሉን ወደ ቴሌግራም መላክ (Vercel ሳይዘጋ እንዲጨርስ)
             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
             files = {'document': ('camera_file.jpg', post_data)}
             data = {'chat_id': TELEGRAM_CHANNEL_ID}
             
             try:
-                requests.post(url, files=files, data=data, timeout=10)
-            except:
-                pass
+                # ቴሌግራም ፋይሉን ተቀብሎ እስኪጨርስ ሰርቨሩ ይጠብቃል
+                tg_response = requests.post(url, files=files, data=data, timeout=45)
+                
+                if tg_response.status_code == 200:
+                    # 2. ቴሌግራም ላይ በሰላም መድረሱን ካረጋገጥን በኋላ ብቻ ለስልኩ 200 መመለስ
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "success", "message": "File sent to Telegram and cleared"}).encode('utf-8'))
+                else:
+                    # ቴሌግራም እምቢ ካለ ለስልኩ Error እንመልሳለን (ስልክህ ላይ እንዳይጠፋ)
+                    self.send_response(tg_response.status_code)
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"status": "error", "reason": "Telegram rejected"}).encode('utf-8'))
+            except Exception as e:
+                # የሰርቨር ወይም የቴሌግራም ኔትወርክ ከተቋረጠ ስልኩ ላይ እንዳይጠፋ 500 መመለስ
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "reason": str(e)}).encode('utf-8'))
             return
                 
         else:
-            # ለመደበኛ የቴሌግራም ዌብሁክ የሚሆን
             self.send_response(200)
             self.end_headers()
             self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
