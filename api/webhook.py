@@ -15,47 +15,42 @@ class handler(BaseHTTPRequestHandler):
         status_code = 200
         response_body = {"status": "ok"}
 
-        # 1. መረጃው ከስልክህ በ requests.post(files={'photo': ...}) የመጣ ከሆነ
         if 'multipart/form-data' in content_type:
             try:
-                # ከስልክ የሚመጣውን ፎቶ በቀጥታ ፎርዋርድ ለማድረግ
-                # ቀላሉ መንገድ ሙሉውን post_data መላክ ሳይሆን በ multipart ፎርማት ማስተላለፍ ነው
+                # ከስልክ የሚመጣውን ፎቶ ወደ ቴሌግራም ማስተላለፍ
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-                
-                # መልእክቱን ወደ ቴሌግራም ፓስ ማድረግ (Header እና የሴክሽን ዳታውን ጨምሮ)
                 headers = {'Content-Type': content_type}
-                res = requests.post(url, data=post_data, headers=headers, params={'chat_id': TELEGRAM_CHANNEL_ID}, timeout=30)
                 
-                if res.status_code == 200:
+                res = requests.post(url, data=post_data, headers=headers, params={'chat_id': TELEGRAM_CHANNEL_ID}, timeout=30)
+                res_json = res.json()
+                
+                if res.status_code == 200 and res_json.get("ok"):
                     response_body = {"status": "success"}
+                    status_code = 200
                 else:
-                    response_body = {"status": "telegram_error", "details": res.json()}
+                    # ቴሌግራም እምቢ ካለ እውነተኛውን ስህተት ለስልኩ መመለስ
+                    status_code = 500
+                    response_body = {"status": "telegram_rejected", "details": res_json}
             except Exception as e:
+                status_code = 500
                 response_body = {"status": "error", "reason": str(e)}
-
-        # 2. መረጃው ከቴሌግራም ዌብሁክ (JSON) የመጣ መደበኛ መልእክት ከሆነ
         else:
+            # የቴሌግራም ዌብሁክ (JSON) አያያዝ
             try:
                 if post_data:
                     data = json.loads(post_data.decode('utf-8'))
                     if "message" in data:
                         message = data["message"]
-                        
-                        # የጽሑፍ ፍተሻ
                         if "text" in message:
-                            text_to_send = message["text"]
-                            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-                            requests.post(url, json={"chat_id": TELEGRAM_CHANNEL_ID, "text": f"📩 {text_to_send}"}, timeout=30)
-                            
-                        # የፎቶ ፍተሻ (ከቴሌግራም ወደ ቻናል)
+                            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": TELEGRAM_CHANNEL_ID, "text": f"📩 {message['text']}"}, timeout=30)
                         elif "photo" in message:
                             photo_id = message["photo"][-1]["file_id"]
-                            url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-                            requests.post(url, json={"chat_id": TELEGRAM_CHANNEL_ID, "photo": photo_id}, timeout=30)
+                            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto", json={"chat_id": TELEGRAM_CHANNEL_ID, "photo": photo_id}, timeout=30)
             except Exception as e:
                 response_body = {"status": "json_parse_error", "reason": str(e)}
 
-        self.send_response(200)
+        # ምላሹን በትክክለኛው የ Status Code መጻፍ
+        self.send_response(status_code)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps(response_body).encode('utf-8'))
