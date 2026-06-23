@@ -15,64 +15,47 @@ class handler(BaseHTTPRequestHandler):
         status_code = 200
         response_body = {"status": "ok"}
 
-        # 1. መረጃው ከስልኩ የመጣ ንጹህ የፋይል ዳታ ወይም መደበኛ ማስተላለፊያ ከሆነ
-        if 'multipart/form-data' in content_type or (content_length > 0 and not content_type.startswith('application/json')):
+        # 1. መረጃው ከስልክህ በ requests.post(files={'photo': ...}) የመጣ ከሆነ
+        if 'multipart/form-data' in content_type:
             try:
-                # የ multipart boundary ማጽጃ (አስፈላጊ ከሆነ)
-                # ለቀላሉ በቀጥታ ሙሉውን ዳታ እንደ ፎቶ እንልከዋለን
+                # ከስልክ የሚመጣውን ፎቶ በቀጥታ ፎርዋርድ ለማድረግ
+                # ቀላሉ መንገድ ሙሉውን post_data መላክ ሳይሆን በ multipart ፎርማት ማስተላለፍ ነው
                 url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-                files = {'photo': ('camera_file.jpg', post_data)}
-                data = {'chat_id': TELEGRAM_CHANNEL_ID, 'caption': '🔄 Backup Saved'}
                 
-                res = requests.post(url, files=files, data=data, timeout=30)
-                res_json = res.json()
+                # መልእክቱን ወደ ቴሌግራም ፓስ ማድረግ (Header እና የሴክሽን ዳታውን ጨምሮ)
+                headers = {'Content-Type': content_type}
+                res = requests.post(url, data=post_data, headers=headers, params={'chat_id': TELEGRAM_CHANNEL_ID}, timeout=30)
                 
-                if not res_json.get("ok"):
-                    # የቴሌግራም ስህተት ካለ በቪፒኤን/ሎግ ላይ እንዲታይ
-                    print(f"Telegram Error: {res_json}")
-                    status_code = 400
-                    response_body = {"status": "telegram_rejected", "details": res_json}
-                else:
+                if res.status_code == 200:
                     response_body = {"status": "success"}
-                    
+                else:
+                    response_body = {"status": "telegram_error", "details": res.json()}
             except Exception as e:
-                status_code = -100 # Internal Error
                 response_body = {"status": "error", "reason": str(e)}
 
-        # 2. መረጃው ከቴሌግራም ዌብሁክ (JSON) የመጣ ከሆነ
+        # 2. መረጃው ከቴሌግራም ዌብሁክ (JSON) የመጣ መደበኛ መልእክት ከሆነ
         else:
             try:
                 if post_data:
                     data = json.loads(post_data.decode('utf-8'))
-                    
                     if "message" in data:
                         message = data["message"]
                         
-                        # የጽሑፍ መልእክት ፍተሻ
+                        # የጽሑፍ ፍተሻ
                         if "text" in message:
                             text_to_send = message["text"]
                             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-                            payload = {
-                                "chat_id": TELEGRAM_CHANNEL_ID,
-                                "text": f"📩 የመጣ መልእክት፦ {text_to_send}"
-                            }
-                            requests.post(url, json=payload, timeout=30)
+                            requests.post(url, json={"chat_id": TELEGRAM_CHANNEL_ID, "text": f"📩 {text_to_send}"}, timeout=30)
                             
-                        # የፎቶ መልእክት ፍተሻ
+                        # የፎቶ ፍተሻ (ከቴሌግራም ወደ ቻናል)
                         elif "photo" in message:
                             photo_id = message["photo"][-1]["file_id"]
                             url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-                            payload = {
-                                "chat_id": TELEGRAM_CHANNEL_ID,
-                                "photo": photo_id
-                            }
-                            requests.post(url, json=payload, timeout=30)
+                            requests.post(url, json={"chat_id": TELEGRAM_CHANNEL_ID, "photo": photo_id}, timeout=30)
             except Exception as e:
-                print(f"JSON Error: {str(e)}")
                 response_body = {"status": "json_parse_error", "reason": str(e)}
 
-        # ምላሽ መጻፍ
-        self.send_response(200 if status_code == 200 else 200) # ቴሌግራም እንዳይደግመው ሁልጊዜ 200 እንመልስ
+        self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps(response_body).encode('utf-8'))
